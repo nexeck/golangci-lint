@@ -265,7 +265,6 @@ func (c *Checker) Check(prog *lint.Program) []Unused {
 
 		unused = append(unused, Unused{Obj: obj, Position: pos})
 	}
-
 	return unused
 }
 
@@ -553,22 +552,10 @@ func (c *Checker) processTypes(pkg *lint.Pkg) {
 		for i := 0; i < iface.NumEmbeddeds(); i++ {
 			c.graph.markUsedBy(iface.Embedded(i), iface)
 		}
-	namedLoop:
 		for obj, objPtr := range named {
-			switch obj.Underlying().(type) {
-			case *types.Interface:
-				// pointers to interfaces have no methods, only checking non-pointer
-				if !c.implements(obj, iface) {
-					continue namedLoop
-				}
-			default:
-				// pointer receivers include the method set of non-pointer receivers,
-				// only checking pointer
-				if !c.implements(objPtr, iface) {
-					continue namedLoop
-				}
+			if !types.Implements(obj, iface) && !types.Implements(objPtr, iface) {
+				continue
 			}
-
 			ifaceMethods := make(map[string]struct{}, iface.NumMethods())
 			n := iface.NumMethods()
 			for i := 0; i < n; i++ {
@@ -607,15 +594,15 @@ func (c *Checker) processTypes(pkg *lint.Pkg) {
 func (c *Checker) processSelections(pkg *lint.Pkg) {
 	fn := func(expr *ast.SelectorExpr, sel *types.Selection, offset int) {
 		scope := pkg.Types.Scope().Innermost(expr.Pos())
-		c.graph.markUsedBy(sel, c.topmostScope(scope, pkg.Types))
-		c.graph.markUsedBy(sel.Obj(), sel)
+		c.graph.markUsedBy(expr.X, c.topmostScope(scope, pkg.Types))
+		c.graph.markUsedBy(sel.Obj(), expr.X)
 		if len(sel.Index()) > 1 {
 			typ := sel.Recv()
 			indices := sel.Index()
 			for _, idx := range indices[:len(indices)-offset] {
 				obj := getField(typ, idx)
 				typ = obj.Type()
-				c.graph.markUsedBy(obj, sel)
+				c.graph.markUsedBy(obj, expr.X)
 			}
 		}
 	}
